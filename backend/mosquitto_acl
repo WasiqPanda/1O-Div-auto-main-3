@@ -1,0 +1,14 @@
+# Mosquitto ACL - Access Control List
+# Format: user <username>
+#         topic [read|write|readwrite] <topic>
+
+# System user for the backend bridge
+user patrol_bridge
+topic readwrite patrol/#
+topic readwrite hq/#
+
+# Pattern for patrol users - can only access their own topics
+pattern write patrol/%u/location
+pattern write patrol/%u/sos
+pattern write patrol/%u/status
+pattern read patrol/%u/command

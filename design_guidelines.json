@@ -1,0 +1,124 @@
+{
+  "identity": {
+    "name": "E1",
+    "role": "The Anti-AI Designer",
+    "philosophy": "Tactical Minimalism. Function over decoration. Data is the art.",
+    "vibe": "Military HUD, Situational Awareness, Precision, Reliability."
+  },
+  "theme_strategy": {
+    "mode": "dark",
+    "archetype": "THE PERFORMANCE PRO (Tactical Variant)",
+    "description": "A high-contrast, low-light interface designed for field operations and command centers. Reduces glare, maximizes data legibility.",
+    "background_style": "Solid Obsidian with subtle tactical grid overlays."
+  },
+  "typography": {
+    "instructions": "Add these fonts via Google Fonts in index.html or CSS import.",
+    "headings": {
+      "family": "'Barlow Condensed', sans-serif",
+      "weights": ["600", "700", "900"],
+      "usage": "All section headers, modal titles, and key metrics.",
+      "style": "Uppercase, tracking-wide."
+    },
+    "body": {
+      "family": "'Inter', sans-serif",
+      "weights": ["400", "500"],
+      "usage": "General text, descriptions."
+    },
+    "data": {
+      "family": "'JetBrains Mono', monospace",
+      "weights": ["400", "500"],
+      "usage": "Coordinates, timestamps, codes, tabular data.",
+      "style": "tracking-tight"
+    }
+  },
+  "colors": {
+    "palette": {
+      "background": "#09090b",
+      "surface": "#18181b",
+      "surface_highlight": "#27272a",
+      "border": "#3f3f46",
+      "primary": "#0ea5e9",
+      "primary_foreground": "#ffffff",
+      "secondary": "#22c55e",
+      "destructive": "#ef4444",
+      "warning": "#eab308",
+      "muted": "#71717a",
+      "accent": "#0ea5e9"
+    },
+    "semantic": {
+      "friendly_unit": "#22c55e",
+      "hostile_unit": "#ef4444",
+      "neutral_unit": "#eab308",
+      "path_trail": "#0ea5e9",
+      "grid_lines": "rgba(255, 255, 255, 0.05)"
+    },
+    "tailwind_config_extension": {
+      "colors": {
+        "tactical": {
+          "bg": "#09090b",
+          "panel": "#18181b",
+          "border": "#3f3f46",
+          "grid": "#27272a"
+        }
+      }
+    }
+  },
+  "layout_system": {
+    "grid_mode": "MODE B: High Density Grid",
+    "spacing": "Compact. Use p-2, p-4 for density. p-6 for containers.",
+    "border_radius": "rounded-sm (2px) or rounded-none. NO large rounded corners.",
+    "containers": "Sharp edges. 1px borders. High contrast separators.",
+    "hq_dashboard": {
+      "structure": "Full-screen Map background. Floating 'Glass' panels (High blur, dark tint) for controls and lists.",
+      "z_index": "Map at 0. Panels at 10. Modals at 50."
+    },
+    "patrol_dashboard": {
+      "structure": "Mobile-first. Large touch targets (min 44px). Bottom navigation or large action buttons.",
+      "contrast": "Maximum contrast for sunlight readability."
+    }
+  },
+  "components": {
+    "style_rules": [
+      "Buttons: Uppercase, tracking-widest, sharp corners, 'outline' or 'ghost' styles preferred for secondary actions.",
+      "Cards: 'Tactical Panel' style - Dark bg (#18181b), 1px border (#3f3f46), no shadow, maybe a 'corner bracket' accent.",
+      "Inputs: Dark bg, light border. Focus ring: Sharp, primary color.",
+      "Modals: Dark overlay (bg-black/80). Sharp modal window."
+    ],
+    "custom_components": [
+      {
+        "name": "TacticalCard",
+        "description": "A card with corner accents resembling a HUD element.",
+        "props": "title, value, status"
+      },
+      {
+        "name": "StatusBadge",
+        "description": "Pill or rectangular badge with glowing dot for status (Active, Offline, SOS).",
+        "props": "status (active|offline|sos)"
+      }
+    ]
+  },
+  "assets": {
+    "logos": {
+      "army_badge": "https://customer-assets.emergentagent.com/job_military-patrol-1/artifacts/7hby3bjy_IMG_8549.png",
+      "company_logo": "https://customer-assets.emergentagent.com/job_military-patrol-1/artifacts/ee228m7y_IMG_8593.png"
+    },
+    "icons": "Use Lucide React. Style: Stroke width 1.5px or 2px for clarity.",
+    "map_tiles": "Use CartoDB Dark Matter or similar dark-themed map tiles for the tactical look."
+  },
+  "libraries": {
+    "required_install": [
+      "react-leaflet",
+      "leaflet"
+    ],
+    "instructions": "Install react-leaflet and leaflet for the map functionality. Use 'react-leaflet' components (MapContainer, TileLayer, Marker, Polyline)."
+  },
+  "universal_guidelines": [
+    "DO NOT use gradients for backgrounds. Solid dark colors only.",
+    "DO NOT use rounded-xl or rounded-2xl. Keep it sharp.",
+    "Ensure all text is legible. Contrast ratio > 4.5:1.",
+    "Use 'data-testid' on all interactive elements.",
+    "Map markers should be distinct (color + shape) for different statuses.",
+    "Animations should be fast (150ms) and linear. No bouncy springs."
+  ],
+  "instructions_to_main_agent": "1. Install 'react-leaflet' and 'leaflet'. 2. Configure Tailwind for the 'Tactical' color palette. 3. Create the 'TacticalCard' and 'StatusBadge' components first. 4. Implement the Map view using React Leaflet with Dark Matter tiles. 5. Ensure the HQ Dashboard is dense (desktop optimized) and Patrol Dashboard is touch-friendly (mobile optimized)."
+}

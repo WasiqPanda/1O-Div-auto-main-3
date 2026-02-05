@@ -1,0 +1,8 @@
+The HQDashboard.js file has become too complex (800+ lines) and causes Babel compilation errors.
+
+To fix this, we need to:
+1. Split into smaller components (MapView, PatrolList, SearchFilters)
+2. Remove nested functions and callbacks
+3. Simplify state management
+
+For now, I'll restore the last working version before search/filter additions.

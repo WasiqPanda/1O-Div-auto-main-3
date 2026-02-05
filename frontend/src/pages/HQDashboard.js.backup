@@ -1,0 +1,804 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import { Header } from '@/components/Header';
+import { TacticalCard } from '@/components/TacticalCard';
+import { StatusBadge } from '@/components/StatusBadge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertCircle, Radio, Users, Activity, MapPin, Hash, Edit, Trash2, Search, Filter } from 'lucide-react';
+import axios from 'axios';
+import { initSocket } from '@/utils/socket';
+import { toast } from 'sonner';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// Fix for default marker icon
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+// Custom marker icons
+const createCustomIcon = (color) => new L.DivIcon({
+  className: 'custom-marker',
+  html: `<div style="background-color: ${color}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10]
+});
+
+const iconColors = {
+  active: '#22c55e',
+  inactive: '#71717a',
+  sos: '#ef4444',
+  assigned: '#eab308'
+};
+
+export const HQDashboard = () => {
+  const [patrols, setPatrols] = useState([]);
+  const [selectedPatrol, setSelectedPatrol] = useState(null);
+  const [trail, setTrail] = useState([]);
+  const [stats, setStats] = useState({});
+  const [sosAlerts, setSosAlerts] = useState([]);
+  const [showQRDialog, setShowQRDialog] = useState(false);
+  const [qrData, setQrData] = useState(null);
+  const [newPatrol, setNewPatrol] = useState({ name: '', camp_name: '', unit: '', leader_email: '', assigned_area: '' });
+  const [editPatrol, setEditPatrol] = useState(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletePatrolId, setDeletePatrolId] = useState(null);
+  const [mapType, setMapType] = useState('normal'); // normal, satellite, terrain
+  const [hqId, setHqId] = useState('');
+  const [hqName, setHqName] = useState('');
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCamp, setFilterCamp] = useState('');
+  const [filterUnit, setFilterUnit] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterOptions, setFilterOptions] = useState({ camps: [], units: [] });
+  const [allTrails, setAllTrails] = useState([]);
+  const [showTrails, setShowTrails] = useState(true);
+  
+  const mapCenter = [21.4272, 92.0058]; // Cox's Bazar, Bangladesh
+  
+  const mapTiles = {
+    normal: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    terrain: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
+  };
+
+  useEffect(() => {
+    const storedHqId = localStorage.getItem('hq_id');
+    const storedHqName = localStorage.getItem('hq_name');
+    const storedIsSuperAdmin = localStorage.getItem('is_super_admin') === 'true';
+    
+    if (!storedHqId) {
+      toast.error('Please login first');
+      window.location.href = '/';
+      return;
+    }
+    setHqId(storedHqId);
+    setHqName(storedHqName);
+    setIsSuperAdmin(storedIsSuperAdmin);
+    
+    if (storedIsSuperAdmin) {
+      toast.info('Super Admin Mode: Viewing All HQs', { duration: 3000 });
+    }
+  }, []);
+
+  const fetchPatrols = useCallback(async () => {
+    if (!hqId) return;
+    try {
+      let url = `${API}/patrols?hq_id=${hqId}`;
+      if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
+      if (filterCamp) url += `&camp_name=${encodeURIComponent(filterCamp)}`;
+      if (filterUnit) url += `&unit=${encodeURIComponent(filterUnit)}`;
+      if (filterStatus) url += `&status=${filterStatus}`;
+      
+      const response = await axios.get(url);
+      setPatrols(response.data);
+    } catch (error) {
+      console.error('Error fetching patrols:', error);
+    }
+  }, [hqId, searchQuery, filterCamp, filterUnit, filterStatus]);
+
+  const fetchFilterOptions = useCallback(async () => {
+    if (!hqId) return;
+    try {
+      const response = await axios.get(`${API}/patrols/filters/options?hq_id=${hqId}`);
+      setFilterOptions(response.data);
+    } catch (error) {
+      console.error('Error fetching filter options:', error);
+    }
+  }, [hqId]);
+
+  const fetchAllTrails = useCallback(async () => {
+    if (!hqId) return;
+    try {
+      const response = await axios.get(`${API}/patrols/trails/all?hq_id=${hqId}&hours=2`);
+      setAllTrails(response.data);
+    } catch (error) {
+      console.error('Error fetching trails:', error);
+    }
+  }, [hqId]);
+
+  const fetchStats = useCallback(async () => {
+    if (!hqId) return;
+    try {
+      const response = await axios.get(`${API}/stats?hq_id=${hqId}`);
+      setStats(response.data);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  }, [hqId]);
+
+  const fetchSOS = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API}/sos`);
+      setSosAlerts(response.data);
+    } catch (error) {
+      console.error('Error fetching SOS alerts:', error);
+    }
+  }, []);
+
+  const fetchTrail = useCallback(async (patrolId) => {
+    try {
+      const response = await axios.get(`${API}/patrols/${patrolId}/trail`);
+      setTrail(response.data.points.map(p => [p.latitude, p.longitude]));
+    } catch (error) {
+      console.error('Error fetching trail:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hqId) return;
+    
+    fetchPatrols();
+    fetchStats();
+    fetchSOS();
+    fetchFilterOptions();
+    fetchAllTrails();
+
+    // Polling for patrol updates every 5 seconds
+    const pollingInterval = setInterval(() => {
+      fetchPatrols();
+      fetchAllTrails();
+    }, 5000);
+
+    // Stats update every 10 seconds
+    const statsInterval = setInterval(() => {
+      fetchStats();
+    }, 10000);
+
+    return () => {
+      clearInterval(pollingInterval);
+      clearInterval(statsInterval);
+    };
+  }, [hqId, fetchPatrols, fetchStats, fetchSOS, fetchFilterOptions, fetchAllTrails]);
+
+  const handlePatrolClick = (patrol) => {
+    setSelectedPatrol(patrol);
+    if (patrol.is_tracking) {
+      fetchTrail(patrol.id);
+    }
+  };
+
+  const handleGenerateQR = async (patrol) => {
+    try {
+      const response = await axios.post(`${API}/codes/generate?patrol_id=${patrol.id}&email=${patrol.leader_email}`);
+      setQrData(response.data);
+      setShowQRDialog(true);
+      toast.success(`Access Code generated for ${patrol.name}`);
+    } catch (error) {
+      toast.error('Failed to generate access code');
+    }
+  };
+
+  const handleCreatePatrol = async () => {
+    try {
+      const payload = {
+        ...newPatrol,
+        soldier_ids: [],
+        hq_id: hqId  // Associate patrol with current HQ
+      };
+      await axios.post(`${API}/patrols`, payload);
+      toast.success('Patrol created successfully');
+      setNewPatrol({ name: '', camp_name: '', unit: '', leader_email: '', assigned_area: '' });
+      fetchPatrols();
+      fetchStats();
+    } catch (error) {
+      toast.error('Failed to create patrol');
+    }
+  };
+
+  const handleEditPatrol = (patrol) => {
+    setEditPatrol({
+      id: patrol.id,
+      name: patrol.name,
+      camp_name: patrol.camp_name,
+      unit: patrol.unit,
+      leader_email: patrol.leader_email,
+      assigned_area: patrol.assigned_area,
+      status: patrol.status
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleUpdatePatrol = async () => {
+    try {
+      await axios.put(`${API}/patrols/${editPatrol.id}/details`, {
+        name: editPatrol.name,
+        camp_name: editPatrol.camp_name,
+        unit: editPatrol.unit,
+        leader_email: editPatrol.leader_email,
+        assigned_area: editPatrol.assigned_area,
+        status: editPatrol.status
+      });
+      toast.success('Patrol updated successfully');
+      setShowEditDialog(false);
+      setEditPatrol(null);
+      fetchPatrols();
+    } catch (error) {
+      toast.error('Failed to update patrol');
+    }
+  };
+
+  const handleDeleteClick = (patrolId) => {
+    setDeletePatrolId(patrolId);
+    setShowDeleteDialog(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      await axios.delete(`${API}/patrols/${deletePatrolId}?hq_id=${hqId}`);
+      toast.success('Patrol deleted successfully');
+      setShowDeleteDialog(false);
+      setDeletePatrolId(null);
+      fetchPatrols();
+      fetchStats();
+    } catch (error) {
+      toast.error('Failed to delete patrol');
+    }
+  };
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setFilterCamp('');
+    setFilterUnit('');
+    setFilterStatus('');
+  };
+
+  const getTrailColor = (status) => {
+    const colors = {
+      active: '#22c55e',
+      assigned: '#eab308',
+      inactive: '#71717a',
+      sos: '#ef4444'
+    };
+    return colors[status] || '#0ea5e9';
+  };
+
+  const handleResolveSOS = async (patrolId) => {
+    try {
+      await axios.patch(`${API}/sos/${patrolId}/resolve`);
+      toast.success('SOS resolved');
+      fetchSOS();
+      fetchPatrols();
+    } catch (error) {
+      toast.error('Failed to resolve SOS');
+    }
+  };
+
+  return (
+    <div className="h-screen flex flex-col bg-tactical-bg" data-testid="hq-dashboard">
+      <Header title={`HQ CONTROL CENTER - ${hqName}`} subtitle="BD Army 10 Div - Real-Time Patrol Monitoring" />
+      
+      {/* Stats Bar */}
+      <div className="grid grid-cols-4 gap-4 p-4 bg-tactical-panel border-b border-tactical-border">
+        <TacticalCard 
+          title="Total Patrols" 
+          value={stats.total_patrols || 0} 
+          icon={Users}
+          status="active"
+        />
+        <TacticalCard 
+          title="Active Tracking" 
+          value={stats.active_patrols || 0} 
+          icon={Radio}
+          status="active"
+        />
+        <TacticalCard 
+          title={isSuperAdmin ? "Total HQs" : "Total Soldiers"} 
+          value={isSuperAdmin ? (stats.total_hqs || 0) : (stats.total_soldiers || 0)} 
+          icon={Users}
+        />
+        <TacticalCard 
+          title="SOS Alerts" 
+          value={stats.active_sos || 0} 
+          icon={AlertCircle}
+          status={stats.active_sos > 0 ? 'sos' : 'inactive'}
+        />
+      </div>
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Map */}
+        <div className="flex-1 relative" data-testid="hq-map-container">
+          {/* Map Type Switcher */}
+          <div className="absolute top-4 right-4 z-[1000] flex gap-2">
+            <Button
+              size="sm"
+              variant={mapType === 'normal' ? 'default' : 'outline'}
+              onClick={() => setMapType('normal')}
+              className="font-heading text-xs"
+              data-testid="map-type-normal"
+            >
+              Normal
+            </Button>
+            <Button
+              size="sm"
+              variant={mapType === 'satellite' ? 'default' : 'outline'}
+              onClick={() => setMapType('satellite')}
+              className="font-heading text-xs"
+              data-testid="map-type-satellite"
+            >
+              Satellite
+            </Button>
+            <Button
+              size="sm"
+              variant={mapType === 'terrain' ? 'default' : 'outline'}
+              onClick={() => setMapType('terrain')}
+              className="font-heading text-xs"
+              data-testid="map-type-terrain"
+            >
+              Terrain
+            </Button>
+            <Button
+              size="sm"
+              variant={showTrails ? 'default' : 'outline'}
+              onClick={() => setShowTrails(!showTrails)}
+              className="font-heading text-xs ml-2"
+              data-testid="toggle-trails"
+            >
+              {showTrails ? 'Hide Trails' : 'Show Trails'}
+            </Button>
+          </div>
+          
+          <MapContainer 
+            center={mapCenter} 
+            zoom={13} 
+            className="w-full h-full"
+            zoomControl={true}
+          >
+            <TileLayer
+              attribution='&copy; OpenStreetMap contributors'
+              url={mapTiles[mapType]}
+            />
+            {patrols.map((patrol) => (
+              patrol.latitude !== 0 && patrol.longitude !== 0 && (
+                <Marker
+                  key={patrol.id}
+                  position={[patrol.latitude, patrol.longitude]}
+                  icon={createCustomIcon(iconColors[patrol.status])}
+                  eventHandlers={{
+                    click: () => handlePatrolClick(patrol)
+                  }}
+                >
+                  <Popup>
+                    <div className="font-mono text-xs">
+                      <div className="font-bold text-sm mb-1">{patrol.name}</div>
+                      <div>ID: {patrol.id}</div>
+                      <div>Area: {patrol.assigned_area}</div>
+                      <div>Status: <StatusBadge status={patrol.status} className="text-xs" /></div>
+                      <div className="mt-1">Last Update: {new Date(patrol.last_update).toLocaleTimeString()}</div>
+                    </div>
+                  </Popup>
+                </Marker>
+              )
+            ))}
+            {trail.length > 0 && (
+              <Polyline 
+                positions={trail} 
+                color="#0ea5e9" 
+                weight={3} 
+                opacity={0.7}
+              />
+            )}
+          </MapContainer>
+        </div>
+
+        {/* Side Panel */}
+        <div className="w-96 glass-panel flex flex-col overflow-hidden" data-testid="hq-side-panel">
+          {/* Search and Filters */}
+          <div className="p-3 border-b border-tactical-border bg-tactical-surface">
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Search patrols..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 bg-tactical-bg border-tactical-border text-sm"
+                  data-testid="search-input"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Select value={filterCamp} onValueChange={setFilterCamp}>
+                  <SelectTrigger className="bg-tactical-bg border-tactical-border text-xs h-8">
+                    <SelectValue placeholder="Camp" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-tactical-panel border-tactical-border">
+                    <SelectItem value="all" className="text-xs">All Camps</SelectItem>
+                    {filterOptions.camps.map(camp => (
+                      <SelectItem key={camp} value={camp} className="text-xs">{camp}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                <Select value={filterUnit} onValueChange={setFilterUnit}>
+                  <SelectTrigger className="bg-tactical-bg border-tactical-border text-xs h-8">
+                    <SelectValue placeholder="Unit" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-tactical-panel border-tactical-border">
+                    <SelectItem value="all" className="text-xs">All Units</SelectItem>
+                    {filterOptions.units.map(unit => (
+                      <SelectItem key={unit} value={unit} className="text-xs">{unit}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="bg-tactical-bg border-tactical-border text-xs h-8">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent className="bg-tactical-panel border-tactical-border">
+                  <SelectItem value="all" className="text-xs">All Status</SelectItem>
+                  <SelectItem value="active" className="text-xs">Active</SelectItem>
+                  <SelectItem value="inactive" className="text-xs">Inactive</SelectItem>
+                  <SelectItem value="assigned" className="text-xs">Assigned</SelectItem>
+                  <SelectItem value="sos" className="text-xs">SOS</SelectItem>
+                </SelectContent>
+              </Select>
+              {(searchQuery || filterCamp || filterUnit || filterStatus) && (
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  className="w-full text-xs"
+                  onClick={handleClearFilters}
+                >
+                  Clear Filters
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <Tabs defaultValue="patrols" className="flex-1 flex flex-col">
+            <TabsList className="grid w-full grid-cols-3 bg-tactical-surface border-b border-tactical-border rounded-none">
+              <TabsTrigger value="patrols" data-testid="tab-patrols">Patrols</TabsTrigger>
+              <TabsTrigger value="sos" data-testid="tab-sos">SOS</TabsTrigger>
+              <TabsTrigger value="new" data-testid="tab-new">New</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="patrols" className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full p-4">
+                <div className="space-y-3">
+                  {patrols.map((patrol) => (
+                    <Card 
+                      key={patrol.id} 
+                      className="bg-tactical-surface border-tactical-border rounded-sm cursor-pointer hover:border-primary transition-fast"
+                      onClick={() => handlePatrolClick(patrol)}
+                      data-testid={`patrol-card-${patrol.id}`}
+                    >
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <CardTitle className="text-base font-heading uppercase text-primary">{patrol.name}</CardTitle>
+                            <div className="mt-2 space-y-1">
+                              {isSuperAdmin && (
+                                <div className="text-xs text-warning">
+                                  <span className="font-bold">HQ ID:</span> {patrol.hq_id}
+                                </div>
+                              )}
+                              <div className="text-xs text-gray-300">
+                                <span className="font-bold text-gray-400">Camp:</span> {patrol.camp_name}
+                              </div>
+                              <div className="text-xs text-gray-300">
+                                <span className="font-bold text-gray-400">Unit:</span> {patrol.unit}
+                              </div>
+                            </div>
+                          </div>
+                          <StatusBadge status={patrol.status} />
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex items-center gap-1 text-gray-400">
+                            <MapPin className="w-3 h-3" />
+                            {patrol.assigned_area}
+                          </div>
+                          <div className="flex items-center gap-1 text-gray-400">
+                            <Activity className="w-3 h-3" />
+                            {patrol.is_tracking ? 'Tracking Active' : 'Not Tracking'}
+                          </div>
+                          <div className="text-gray-500 font-mono">ID: {patrol.id}</div>
+                          
+                          <div className="grid grid-cols-3 gap-2 mt-3">
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="font-heading text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleGenerateQR(patrol);
+                              }}
+                              data-testid={`generate-qr-btn-${patrol.id}`}
+                            >
+                              <Hash className="w-3 h-3 mr-1" />
+                              Code
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="font-heading text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditPatrol(patrol);
+                              }}
+                              data-testid={`edit-btn-${patrol.id}`}
+                            >
+                              <Edit className="w-3 h-3 mr-1" />
+                              Edit
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="destructive" 
+                              className="font-heading text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteClick(patrol.id);
+                              }}
+                              data-testid={`delete-btn-${patrol.id}`}
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" />
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="sos" className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full p-4">
+                <div className="space-y-3">
+                  {sosAlerts.map((alert, idx) => (
+                    <Card key={idx} className="bg-destructive/10 border-destructive rounded-sm" data-testid={`sos-alert-${idx}`}>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-heading text-destructive uppercase">SOS ALERT</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2 text-xs">
+                          <div className="font-mono">Patrol: {alert.patrol_id}</div>
+                          <div className="text-gray-300">{alert.message}</div>
+                          <div className="text-gray-400">{new Date(alert.timestamp).toLocaleString()}</div>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="w-full mt-2"
+                            onClick={() => handleResolveSOS(alert.patrol_id)}
+                            data-testid={`resolve-sos-btn-${alert.patrol_id}`}
+                          >
+                            Resolve
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {sosAlerts.length === 0 && (
+                    <div className="text-center text-gray-400 text-sm py-8">
+                      No active SOS alerts
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="new" className="flex-1 overflow-hidden">
+              <div className="p-4 space-y-4">
+                <div>
+                  <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Patrol Name</label>
+                  <Input 
+                    placeholder="e.g., Alpha Team" 
+                    value={newPatrol.name}
+                    onChange={(e) => setNewPatrol({...newPatrol, name: e.target.value})}
+                    className="bg-tactical-surface border-tactical-border"
+                    data-testid="input-patrol-name"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Camp Name</label>
+                  <Input 
+                    placeholder="e.g., Cox's Bazar Base Camp"
+                    value={newPatrol.camp_name}
+                    onChange={(e) => setNewPatrol({...newPatrol, camp_name: e.target.value})}
+                    className="bg-tactical-surface border-tactical-border"
+                    data-testid="input-camp-name"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Unit</label>
+                  <Input 
+                    placeholder="e.g., 10 Infantry Division"
+                    value={newPatrol.unit}
+                    onChange={(e) => setNewPatrol({...newPatrol, unit: e.target.value})}
+                    className="bg-tactical-surface border-tactical-border"
+                    data-testid="input-unit"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Leader Email</label>
+                  <Input 
+                    type="email"
+                    placeholder="leader@army.mil"
+                    value={newPatrol.leader_email}
+                    onChange={(e) => setNewPatrol({...newPatrol, leader_email: e.target.value})}
+                    className="bg-tactical-surface border-tactical-border"
+                    data-testid="input-leader-email"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Assigned Area</label>
+                  <Input 
+                    placeholder="e.g., Beach Sector Alpha" 
+                    value={newPatrol.assigned_area}
+                    onChange={(e) => setNewPatrol({...newPatrol, assigned_area: e.target.value})}
+                    className="bg-tactical-surface border-tactical-border"
+                    data-testid="input-assigned-area"
+                  />
+                </div>
+                <Button 
+                  className="w-full font-heading"
+                  onClick={handleCreatePatrol}
+                  data-testid="create-patrol-btn"
+                >
+                  Create Patrol
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+
+      {/* Access Code Dialog */}
+      <Dialog open={showQRDialog} onOpenChange={setShowQRDialog}>
+        <DialogContent className="bg-tactical-panel border-tactical-border z-[9999]" data-testid="code-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase">Patrol Access Code</DialogTitle>
+          </DialogHeader>
+          {qrData && (
+            <div className="space-y-4 text-center py-4">
+              <div className="space-y-2">
+                <div className="text-sm text-gray-400">Patrol: {qrData.patrol_name}</div>
+                <div className="text-sm text-gray-400">Patrol ID: {qrData.patrol_id}</div>
+              </div>
+              <div className="bg-tactical-surface p-6 rounded border border-primary/30">
+                <div className="text-sm text-gray-400 mb-2">Access Code</div>
+                <div className="text-5xl font-bold tracking-widest text-primary font-mono">{qrData.code}</div>
+              </div>
+              <div className="text-xs text-gray-400 space-y-1">
+                <div>Share this code with patrol commander</div>
+                <div>Expires: {new Date(qrData.expires_at).toLocaleString()}</div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Patrol Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="bg-tactical-panel border-tactical-border z-[9999]" data-testid="edit-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase">Edit Patrol</DialogTitle>
+          </DialogHeader>
+          {editPatrol && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Patrol Name</label>
+                <Input 
+                  value={editPatrol.name}
+                  onChange={(e) => setEditPatrol({...editPatrol, name: e.target.value})}
+                  className="bg-tactical-surface border-tactical-border"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Camp Name</label>
+                <Input 
+                  value={editPatrol.camp_name}
+                  onChange={(e) => setEditPatrol({...editPatrol, camp_name: e.target.value})}
+                  className="bg-tactical-surface border-tactical-border"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Unit</label>
+                <Input 
+                  value={editPatrol.unit}
+                  onChange={(e) => setEditPatrol({...editPatrol, unit: e.target.value})}
+                  className="bg-tactical-surface border-tactical-border"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Leader Email</label>
+                <Input 
+                  value={editPatrol.leader_email}
+                  onChange={(e) => setEditPatrol({...editPatrol, leader_email: e.target.value})}
+                  className="bg-tactical-surface border-tactical-border"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-heading uppercase text-gray-400 block mb-1">Assigned Area</label>
+                <Input 
+                  value={editPatrol.assigned_area}
+                  onChange={(e) => setEditPatrol({...editPatrol, assigned_area: e.target.value})}
+                  className="bg-tactical-surface border-tactical-border"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  className="flex-1 font-heading"
+                  onClick={handleUpdatePatrol}
+                >
+                  Update Patrol
+                </Button>
+                <Button 
+                  variant="outline"
+                  className="flex-1 font-heading"
+                  onClick={() => setShowEditDialog(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="bg-tactical-panel border-tactical-border z-[9999]" data-testid="delete-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase text-destructive">Delete Patrol</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-gray-300">Are you sure you want to delete this patrol? This action cannot be undone.</p>
+            <p className="text-sm text-gray-400">All related data (locations, trails, access codes) will be permanently removed.</p>
+            <div className="flex gap-2">
+              <Button 
+                variant="destructive"
+                className="flex-1 font-heading"
+                onClick={handleDeleteConfirm}
+              >
+                Delete Permanently
+              </Button>
+              <Button 
+                variant="outline"
+                className="flex-1 font-heading"
+                onClick={() => setShowDeleteDialog(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
