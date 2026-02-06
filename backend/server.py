@@ -73,7 +73,10 @@ connected_clients: Dict[str, WebSocket] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
     await init_db()
+except Exception as e:
+    print(f"DB init failed, starting server anyway: {e}")
     
     # Start MQTT bridge if enabled
     if MQTT_ENABLED:
